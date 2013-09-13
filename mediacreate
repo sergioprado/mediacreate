@@ -1,2 +1,232 @@
 #!/bin/bash
-echo "OK!"
+
+# program parameters
+DEVICE_FILE=""
+CONFIG_FILE=""
+DEBUG=0
+
+# config file variables
+CFG_DOS=""
+CFG_GEOMETRY=""
+CFG_PARTITION=""
+CFG_FORMAT=""
+CFG_IMAGE=""
+CFG_IMGDIR=""
+
+clean()
+{
+    rm -Rf /tmp/teste  ## remover!
+}
+
+exit_app()
+{
+    clean
+    exit $1
+}
+
+log()
+{
+    local DATE=$(date)
+    echo "[$DATE] $@"
+}
+
+exit_error()
+{
+    log "ERROR: $@"
+    exit_app 1
+}
+
+exit_error_if_null()
+{
+    if [ "$2" == "" ]; then
+        exit_error $1
+    fi
+}
+
+exit_error_if_not_num()
+{
+    exit_error_if_null $@
+
+    re='^[0-9]+$'
+    if ! [[ $2 =~ $re ]] ; then
+        exit_error $1
+    fi
+}
+
+assert()
+{
+    $@
+    if [ $? != 0 ]; then
+        exit_error "Could not execute command [$@]"
+    fi
+}
+
+usage()
+{
+    echo -e "usage: mediacreate [options]"
+    echo -e "\t-d, --device\tdevice node file"
+    echo -e "\t-c, --config\tread config from file"
+    echo -e "\t-g, --debug\tshow debug messages"
+    echo -e "\t-h, --help\tthis help"
+}
+
+read_params()
+{
+    while [ "$1" != "" ]; do
+        case $1 in
+            -d | --device )         shift
+                                    DEVICE_FILE=$1
+                                    ;;
+
+            -c | --config )         shift
+                                    CONFIG_FILE=$1
+                                    ;;
+
+            -g | --debug )          DEBUG=1
+                                    ;;
+            
+            -h | --help )           usage
+                                    exit_app
+                                    ;;
+
+            * )                     usage
+                                    exit_app 1
+        esac
+        shift
+    done
+}
+
+validate_params()
+{
+    if [ "$DEVICE_FILE" == "" ]; then
+        exit_error "Please provide a device file."
+    fi
+
+    if [ ! -e $DEVICE_FILE ]; then
+        exit_error "Device file [$DEVICE_FILE] not found!"
+    fi
+
+    if [ "$CONFIG_FILE" == "" ]; then
+        exit_error "Please provide a config file."
+    fi
+
+    if [ ! -e $CONFIG_FILE ]; then
+        exit_error "Device file [$CONFIG_FILE] not found!"
+    fi
+}
+
+check_params()
+{
+    log "Checking parameters..."
+    read_params $@
+    validate_params
+}
+
+search_option_config()
+{
+    grep -q "^$1" $CONFIG_FILE
+    return $?
+}
+
+get_multiple_option_config()
+{
+    grep "^$1" $CONFIG_FILE | awk -F= '{print $2}'
+}
+
+get_option_config()
+{
+    grep "^$1" $CONFIG_FILE | cut -d = -f 2
+}
+
+get_option_field_config()
+{
+    echo -e $1 | cut -d , -f $2
+}
+
+read_config_dos()
+{
+    if search_option_config "DOS=true"; then
+        CFG_DOS="-D"
+    fi
+}
+
+read_config_geometry()
+{
+    OPTION_CONFIG=$(get_option_config "GEOMETRY")
+    
+    if [ "$OPTION_CONFIG" == "" ]; then
+        return
+    fi
+    
+    CFG_HEADS=$(get_option_field_config $OPTION_CONFIG 1)
+    exit_error_if_not_num "Invalid heads configuration!" $CFG_HEADS
+
+    CFG_SECTORS=$(get_option_field_config $OPTION_CONFIG 2)
+    exit_error_if_not_num "Invalid sectors configuration!" $CFG_SECTORS
+
+    DISK_SIZE=$(fdisk -l /dev/sdd | grep Disk | grep bytes | awk '{print $5}')
+    exit_error_if_not_num "Invalid disk size!" $DISK_SIZE
+
+    CFG_CYLINDERS=$(echo $DISK_SIZE/$CFG_HEADS/$CFG_SECTORS/512 | bc)
+    exit_error_if_not_num "Invalid cylinders configuration!" $CFG_CYLINDERS
+    
+    CFG_GEOMETRY="-H $CFG_HEADS -S $CFG_SECTORS -C $CFG_CYLINDERS"
+}
+
+read_config_partition()
+{
+    CFG_PARTITION=$(get_multiple_option_config "PARTITION")
+    exit_error_if_null "Please provide at least one partition!" $CFG_PARTITION
+}
+
+read_config_format()
+{
+    CFG_FORMAT=$(get_multiple_option_config "FORMAT")
+}
+
+read_config_image()
+{
+    CFG_IMAGE=$(get_multiple_option_config "IMAGE")
+}
+
+read_config_image_dir()
+{
+    CFG_IMGDIR=$(get_option_config "IMGDIR")
+
+    if [ "$CFG_IMGDIR" == "" ]; then
+        CFG_IMGDIR=$(pwd)
+    fi
+}
+
+read_config()
+{
+    log "Reading config file..."
+    read_config_dos
+    read_config_geometry
+    read_config_partition
+    read_config_format
+    read_config_image
+    read_config_image_dir
+}
+
+check_user()
+{
+    if [ "$EUID" != "0" ]; then
+        exit_error "This program must be run as root."
+    fi
+}
+
+main(){
+    check_user
+    check_params $@
+    read_config
+    echo "CFG_DOS=$CFG_DOS"
+    echo "CFG_GEOMETRY=$CFG_GEOMETRY"
+    echo "CFG_PARTITION=[$CFG_PARTITION]"
+    echo "CFG_FORMAT=[$CFG_FORMAT]"
+    echo "CFG_IMAGE=[$CFG_IMAGE]"
+    echo "CFG_IMGDIR=$CFG_IMGDIR"
+}
+
+main $@
+
