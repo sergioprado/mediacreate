@@ -4,6 +4,7 @@
 DEVICE_FILE=""
 CONFIG_FILE=""
 DEBUG=0
+FORCE=0
 
 # config file variables
 CFG_DOS=""
@@ -12,6 +13,16 @@ CFG_PARTITION=""
 CFG_FORMAT=""
 CFG_IMAGE=""
 CFG_IMGDIR=""
+
+# banner
+APP_VERSION="1.0"
+APP_BANNER="Starting mediacreate V$APP_VERSION"
+
+# debug
+DEBUG_REDIR="&>-"
+
+# filesystems
+SUPPORTED_FS="btrfs, ext2, ext3, ext4, ntfs, vfat"
 
 clean()
 {
@@ -28,6 +39,13 @@ log()
 {
     local DATE=$(date)
     echo "[$DATE] $@"
+}
+
+log_debug()
+{
+    if [ $DEBUG == 1 ]; then
+        echo "$@"
+    fi
 }
 
 exit_error()
@@ -47,7 +65,7 @@ exit_error_if_not_num()
 {
     exit_error_if_null $@
 
-    re='^[0-9]+$'
+    local re='^[0-9]+$'
     if ! [[ $2 =~ $re ]] ; then
         exit_error $1
     fi
@@ -61,11 +79,24 @@ assert()
     fi
 }
 
+contains() {
+    [[ $1 =~ $2 ]] && return 0 || return 1
+}
+
+exit_contains()
+{
+    contains "$1" "$2"
+    if [ $? == 1 ]; then
+        exit_error "$3"
+    fi
+}
+
 usage()
 {
     echo -e "usage: mediacreate [options]"
     echo -e "\t-d, --device\tdevice node file"
     echo -e "\t-c, --config\tread config from file"
+    echo -e "\t-f, --force\tdo not ask before partitioning device"
     echo -e "\t-g, --debug\tshow debug messages"
     echo -e "\t-h, --help\tthis help"
 }
@@ -81,8 +112,12 @@ read_params()
             -c | --config )         shift
                                     CONFIG_FILE=$1
                                     ;;
+            
+            -f | --force )          FORCE=1
+                                    ;;
 
             -g | --debug )          DEBUG=1
+                                    DEBUG_REDIR=""
                                     ;;
             
             -h | --help )           usage
@@ -106,6 +141,13 @@ validate_params()
         exit_error "Device file [$DEVICE_FILE] not found!"
     fi
 
+    if [[ "$DEVICE_FILE" == *mmcblk* ]]; then 
+        DEVICE_PART_FILE=${DEVICE_FILE}p
+    else
+        DEVICE_PART_FILE=${DEVICE_FILE}
+    fi
+    log_debug "DEVICE_PART_FILE=$DEVICE_PART_FILE"
+
     if [ "$CONFIG_FILE" == "" ]; then
         exit_error "Please provide a config file."
     fi
@@ -117,7 +159,7 @@ validate_params()
 
 check_params()
 {
-    log "Checking parameters..."
+    log "Checking parameters"
     read_params $@
     validate_params
 }
@@ -152,7 +194,7 @@ read_config_dos()
 
 read_config_geometry()
 {
-    OPTION_CONFIG=$(get_option_config "GEOMETRY")
+    local OPTION_CONFIG=$(get_option_config "GEOMETRY")
     
     if [ "$OPTION_CONFIG" == "" ]; then
         return
@@ -176,7 +218,6 @@ read_config_geometry()
 read_config_partition()
 {
     CFG_PARTITION=$(get_multiple_option_config "PARTITION")
-    exit_error_if_null "Please provide at least one partition!" $CFG_PARTITION
 }
 
 read_config_format()
@@ -198,15 +239,26 @@ read_config_image_dir()
     fi
 }
 
+print_config()
+{
+    log_debug "CFG_DOS=[$CFG_DOS]"
+    log_debug "CFG_GEOMETRY=[$CFG_GEOMETRY]"
+    log_debug "CFG_PARTITION=[$CFG_PARTITION]"
+    log_debug "CFG_FORMAT=[$CFG_FORMAT]"
+    log_debug "CFG_IMAGE=[$CFG_IMAGE]"
+    log_debug "CFG_IMGDIR=[$CFG_IMGDIR]"
+}
+
 read_config()
 {
-    log "Reading config file..."
+    log "Reading config file"
     read_config_dos
     read_config_geometry
     read_config_partition
     read_config_format
     read_config_image
     read_config_image_dir
+    print_config
 }
 
 check_user()
@@ -216,16 +268,138 @@ check_user()
     fi
 }
 
+disk_partition_confirm()
+{
+    local RESP=""
+    while [ "$RESP" != "y" ]; do
+        echo -n "This operation will erase $DEVICE_FILE! Do you want to continue? (y/n) "
+        read RESP
+        RESP=$(echo "${RESP,,}")
+        if [ "$RESP" == "n" ]; then
+            exit_error "Operation cancelled!"
+        fi
+    done
+}
+
+disk_umount()
+{
+    log "Umounting disk partitions"
+    for f in $(ls ${DEVICE_FILE}*); do
+        sudo umount $f &>- 
+    done
+}
+
+disk_prepare()
+{
+    if [ $FORCE == 0 ]; then
+        disk_partition_confirm
+    fi
+
+    disk_umount
+}
+
+disk_partition()
+{
+    if [ -z "$CFG_PARTITION" ]; then
+        log "No disk partitions to be created"
+        return
+    fi
+
+    log "Creating disk partitions"
+    
+    local SFDISK_CMD="sfdisk --no-reread -u M $CFG_DOS $CFG_GEOMETRY $DEVICE_FILE $DEBUG_REDIR"
+    log_debug "SFDISK command [$SFDISK_CMD]"
+
+    echo "$CFG_PARTITION" | eval $SFDISK_CMD
+    if [ $? != 0 ]; then
+        exit_error "Could not create disk partitions!"
+    fi
+
+    sfdisk --re-read $DEVICE_FILE &>-
+}
+
+parse_format_config()
+{
+    FMTINFO_PART=$(get_option_field_config $1 1)
+    log_debug FMTINFO_PART=$FMTINFO_PART
+    exit_error_if_not_num "Invalid partition number!" $FMTINFO_PART
+
+    FMTINFO_LABEL=$(get_option_field_config $1 2)
+    log_debug FMTINFO_LABEL=$FMTINFO_LABEL
+
+    FMTINFO_TYPE=$(get_option_field_config $1 3)
+    log_debug FMTINFO_TYPE=$FMTINFO_TYPE
+    exit_error_if_null "Please provide a filesystem type for partition $FMTINFO_PART!" $FMTINFO_TYPE
+    exit_contains "$SUPPORTED_FS" "$FMTINFO_TYPE" "Invalid filesystem type for partition $FMTINFO_PART!"
+}
+
+disk_format_command()
+{
+    local LABEL=""
+    if [ ! -z "$FMTINFO_LABEL" ]; then
+        case $FMTINFO_TYPE in
+            "vfat")
+                LABEL="-n $FMTINFO_LABEL"
+                ;;
+            *)
+                LABEL="-L $FMTINFO_LABEL"
+                ;;
+        esac 
+    fi
+
+    local ADDCMD=""
+    case $FMTINFO_TYPE in
+        "vfat")
+            ADDCMD="-F 32"
+            ;;
+    esac
+
+    echo "mkfs.$FMTINFO_TYPE $ADDCMD $LABEL $1"
+}
+
+disk_format_partition()
+{
+    local PARTITION_FILE="${DEVICE_PART_FILE}${FMTINFO_PART}"
+    if [ ! -e $PARTITION_FILE ]; then
+        exit_error "Disk partition $PARTITION_FILE not found!"
+    fi
+    log "Formatting disk partition [$PARTITION_FILE] to [$FMTINFO_TYPE]"
+
+    local FORMAT_CMD=$(disk_format_command $PARTITION_FILE)
+    log_debug FORMAT_CMD=[$FORMAT_CMD]
+
+    eval $FORMAT_CMD $DEBUG_REDIR
+    if [ $? != 0 ]; then
+        exit_error "Error formating disk partition $PARTITION_FILE!"
+    fi
+}
+
+disk_format()
+{
+    if [ -z "$CFG_FORMAT" ]; then
+        log "No disk partitions to be formatted"
+        return
+    fi
+
+    log "Formating disk partitions"
+
+    local FMTINFO=""
+
+    for FMTINFO in $(echo "$CFG_FORMAT"); do
+        parse_format_config $FMTINFO
+        disk_format_partition
+    done
+}
+
 main(){
+    log $APP_BANNER
     check_user
     check_params $@
     read_config
-    echo "CFG_DOS=$CFG_DOS"
-    echo "CFG_GEOMETRY=$CFG_GEOMETRY"
-    echo "CFG_PARTITION=[$CFG_PARTITION]"
-    echo "CFG_FORMAT=[$CFG_FORMAT]"
-    echo "CFG_IMAGE=[$CFG_IMAGE]"
-    echo "CFG_IMGDIR=$CFG_IMGDIR"
+    disk_prepare
+    disk_partition
+    disk_format
+    log "Media successfully created!"
 }
 
 main $@
