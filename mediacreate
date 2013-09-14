@@ -22,7 +22,10 @@ APP_BANNER="Starting mediacreate V$APP_VERSION"
 DEBUG_REDIR="&>-"
 
 # filesystems
-SUPPORTED_FS="btrfs, ext2, ext3, ext4, ntfs, vfat"
+SUPPORTED_FS="btrfs ext2 ext3 ext4 ntfs vfat"
+
+# copy image modes
+IMAGE_COPY_MODES="raw dir tar"
 
 clean()
 {
@@ -80,7 +83,12 @@ assert()
 }
 
 contains() {
-    [[ $1 =~ $2 ]] && return 0 || return 1
+    for s in $1; do
+        if [ "$s" == "$2" ]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 exit_contains()
@@ -233,6 +241,7 @@ read_config_image()
 read_config_image_dir()
 {
     CFG_IMGDIR=$(get_option_config "IMGDIR")
+    CFG_IMGDIR=$(eval echo $CFG_IMGDIR)
 
     if [ "$CFG_IMGDIR" == "" ]; then
         CFG_IMGDIR=$(pwd)
@@ -391,6 +400,51 @@ disk_format()
     done
 }
 
+parse_image_config()
+{
+    IMGINFO_PART=$(get_option_field_config $1 1)
+    log_debug IMGINFO_PART=$IMGINFO_PART
+    exit_error_if_not_num "Invalid partition number!" $IMGINFO_PART
+
+    IMGINFO_FILE=$(get_option_field_config $1 2)
+    log_debug IMGINFO_FILE=$IMGINFO_FILE
+    exit_error_if_null "Please provide an image filename!" $IMGINFO_FILE
+    if [ "${IMGINFO_FILE:0:1}" != "/" ]; then
+        IMGINFO_FILE=${CFG_IMGDIR}/${IMGINFO_FILE}
+        log_debug "IMGINFO_FILE=$IMGINFO_FILE (absolute path)"
+    fi
+    if [ ! -e $IMGINFO_FILE ]; then
+        exit_error "Image file not found [$IMGINFO_FILE]!"
+    fi
+
+    IMGINFO_MODE=$(get_option_field_config $1 3)
+    log_debug IMGINFO_MODE=$IMGINFO_MODE
+    exit_contains "$IMAGE_COPY_MODES" "$IMGINFO_MODE" "Invalid image copy mode!"
+
+    IMGINFO_LOCATION=$(get_option_field_config $1 4)
+    log_debug IMGINFO_LOCATION=$IMGINFO_LOCATION
+    exit_error_if_null "Please provide a location for the image!" $IMGINFO_LOCATION
+    if [ "$IMGINFO_MODE" == "raw" ]; then
+        exit_error_if_not_num "Invalid disk location for raw mode!" $IMGINFO_LOCATION
+    fi
+}
+
+disk_copy_image()
+{
+    if [ -z "$CFG_IMAGE" ]; then
+        log "No images to be copied to disk"
+        return
+    fi
+
+    log "Copying images to disk"
+
+    local IMGINFO=""
+
+    for IMGINFO in $(echo "$CFG_IMAGE"); do
+        parse_image_config $IMGINFO
+    done
+}
+
 main(){
     log $APP_BANNER
     check_user
@@ -399,6 +453,7 @@ main(){
     disk_prepare
     disk_partition
     disk_format
+    disk_copy_image
     log "Media successfully created!"
 }
 
