@@ -30,7 +30,7 @@ SUPPORTED_FS="btrfs ext2 ext3 ext4 ntfs vfat"
 # copy image modes
 IMAGE_COPY_MODES="raw file tar"
 
-clean()
+clean()    
 {
     umount $TMP_DIR &>-
     rm -Rf $TMP_DIR
@@ -64,6 +64,7 @@ log_debug()
 exit_error()
 {
     log "ERROR: $@"
+    sleep 1
     exit_app 1
 }
 
@@ -456,7 +457,22 @@ copy_image_raw()
 
 copy_image_file()
 {
-    log "copying file"
+    log "Copying [$IMGINFO_FILE] to [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
+
+    umount $IMGINFO_DEVICE &>-
+    assert mount $IMGINFO_DEVICE $TMP_DIR
+
+    local DEST=$TMP_DIR/$IMGINFO_LOCATION
+    if [ ! -e $DEST ]; then
+        exit_error "Image destination directory does not exist [$IMGINFO_LOCATION]!"
+    fi
+
+    log "Copying file [$IMGINFO_FILE] to disk"
+    assert eval cp -Rdv $IMGINFO_FILE $DEST $DEBUG_REDIR
+
+    log "Syncing disk partition [$IMGINFO_DEVICE]"
+    sync
+    assert umount $IMGINFO_DEVICE
 }
 
 copy_image_tar()
