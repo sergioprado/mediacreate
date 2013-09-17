@@ -14,6 +14,9 @@ CFG_FORMAT=""
 CFG_IMAGE=""
 CFG_IMGDIR=""
 
+# temp dir
+TMP_DIR=$(pwd)/.mediacreate
+
 # banner
 APP_VERSION="1.0"
 APP_BANNER="Starting mediacreate V$APP_VERSION"
@@ -25,11 +28,18 @@ DEBUG_REDIR="&>-"
 SUPPORTED_FS="btrfs ext2 ext3 ext4 ntfs vfat"
 
 # copy image modes
-IMAGE_COPY_MODES="raw dir tar"
+IMAGE_COPY_MODES="raw file tar"
 
 clean()
 {
-    rm -Rf /tmp/teste  ## remover!
+    umount $TMP_DIR &>-
+    rm -Rf $TMP_DIR
+}
+
+prepare()
+{
+    clean
+    assert mkdir -p $TMP_DIR
 }
 
 exit_app()
@@ -405,6 +415,16 @@ parse_image_config()
     IMGINFO_PART=$(get_option_field_config $1 1)
     log_debug IMGINFO_PART=$IMGINFO_PART
     exit_error_if_not_num "Invalid partition number!" $IMGINFO_PART
+    
+    if [ "$IMGINFO_PART" != "0" ]; then
+        IMGINFO_DEVICE=$DEVICE_FILE$IMGINFO_PART
+    else
+        IMGINFO_DEVICE=$DEVICE_FILE
+    fi
+    log_debug IMGINFO_DEVICE=$IMGINFO_DEVICE
+    if [ ! -e $IMGINFO_DEVICE ]; then
+        exit_error "Image device file not found [$IMGINFO_DEVICE]!"
+    fi
 
     IMGINFO_FILE=$(get_option_field_config $1 2)
     log_debug IMGINFO_FILE=$IMGINFO_FILE
@@ -429,6 +449,54 @@ parse_image_config()
     fi
 }
 
+copy_image_raw()
+{
+    log "copying raw"
+}
+
+copy_image_file()
+{
+    log "copying file"
+}
+
+copy_image_tar()
+{
+    log "Untar [$IMGINFO_FILE] on [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
+
+    umount $IMGINFO_DEVICE &>-
+    assert mount $IMGINFO_DEVICE $TMP_DIR
+
+    local DEST=$TMP_DIR/$IMGINFO_LOCATION
+    if [ ! -e $DEST ]; then
+        exit_error "Image destination directory does not exist [$IMGINFO_LOCATION]!"
+    fi
+
+    log "Decompressing file [$IMGINFO_FILE] to disk"
+    assert eval tar xfv $IMGINFO_FILE -C $TMP_DIR/$IMGINFO_LOCATION $DEBUG_REDIR
+
+    log "Syncing disk partition [$IMGINFO_DEVICE]"
+    sync
+    assert umount $IMGINFO_DEVICE
+}
+
+copy_image()
+{
+    case $IMGINFO_MODE in
+        "raw")
+            copy_image_raw
+            ;;
+        "file")
+            copy_image_file
+            ;;
+        "tar")
+            copy_image_tar
+            ;;
+        *)
+            exit_error "Invalid image copy mode [$IMGINFO_MODE]!"
+            ;;
+    esac
+}
+
 disk_copy_image()
 {
     if [ -z "$CFG_IMAGE" ]; then
@@ -442,11 +510,13 @@ disk_copy_image()
 
     for IMGINFO in $(echo "$CFG_IMAGE"); do
         parse_image_config $IMGINFO
+        copy_image
     done
 }
 
 main(){
     log $APP_BANNER
+    prepare
     check_user
     check_params $@
     read_config
@@ -454,6 +524,7 @@ main(){
     disk_partition
     disk_format
     disk_copy_image
+    clean
     log "Media successfully created!"
 }
 
