@@ -15,6 +15,6 @@ Please use github for pull requests: https://github.com/sergioprado/mediacreate/
 Reporting bugs
 -------------------------
 
-The github issue tracker (sergioprado/mediacreate/issues) is being used to keep track of bugs.
+Please use the github issue tracker: https://github.com/sergioprado/mediacreate/issues
 
-Maintainers: Sergio Prado <sergio.prado@e-labworks.com>
+If you have any further questions, send an e-mail to sergio.prado@e-labworks.com.
