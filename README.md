@@ -3,9 +3,18 @@ mediacreate
 
 Format and burn images on storage devices.
 
-usage: mediacreate [options]
+Help is available from the command line tool.
 
-    -h, --help      this help
-    -d, --device    device node file
-    -f, --file      read config from file
-    -g, --debug     show debug messages             
+    mediacreate -h
+
+Contributing
+-------------------------
+
+Please use github for pull requests: https://github.com/sergioprado/mediacreate/pulls
+
+Reporting bugs
+-------------------------
+
+The github issue tracker (sergioprado/mediacreate/issues) is being used to keep track of bugs.
+
+Maintainers: Sergio Prado <sergio.prado@e-labworks.com>
