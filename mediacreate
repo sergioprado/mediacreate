@@ -126,9 +126,10 @@ exit_contains()
 
 usage()
 {
+    echo "mediacreate version $APP_VERSION"
     echo -e "usage: mediacreate [options]"
     echo -e "\t-d, --device\tdevice node file"
-    echo -e "\t-c, --config\tread config from file"
+    echo -e "\t-c, --config\tconfig filename"
     echo -e "\t-f, --force\tdo not ask before partitioning device"
     echo -e "\t-g, --debug\tshow debug messages"
     echo -e "\t-h, --help\tthis help"
@@ -136,6 +137,11 @@ usage()
 
 read_params()
 {
+    if [ -z "$1" ]; then
+        usage
+        exit_app
+    fi
+
     while [ "$1" != "" ]; do
         case $1 in
             -d | --device )         shift
@@ -192,8 +198,8 @@ validate_params()
 
 check_params()
 {
-    log "Checking parameters"
     read_params $@
+    log $APP_BANNER
     validate_params
 }
 
@@ -239,7 +245,7 @@ read_config_geometry()
     CFG_SECTORS=$(get_option_field_config $OPTION_CONFIG 2)
     exit_error_if_not_num "Invalid sectors configuration!" $CFG_SECTORS
 
-    DISK_SIZE=$(fdisk -l /dev/sdd | grep Disk | grep bytes | awk '{print $5}')
+    DISK_SIZE=$(fdisk -l $DEVICE_FILE | grep Disk | grep bytes | awk '{print $5}')
     exit_error_if_not_num "Invalid disk size!" $DISK_SIZE
 
     CFG_CYLINDERS=$(echo $DISK_SIZE/$CFG_HEADS/$CFG_SECTORS/512 | bc)
@@ -473,15 +479,17 @@ parse_image_config()
 
 copy_image_raw()
 {
-    log "Copying [$IMGINFO_FILE] to [$IMGINFO_DEVICE] starting at block [$IMGINFO_LOCATION]"
+    log "Copying [$IMGINFO_FILE] at block [$IMGINFO_START] to [$IMGINFO_DEVICE] at block [$IMGINFO_LOCATION]"
 
-    # aqui! checar tamanhos!
+    # confirm here
 
-    local BS="bs=512"
-    if [ "$IMGINFO_LOCATION" == "0" ]; then
-        BS="bs=1M"
+    local DD_PARAMS=""
+    if [ "$IMGINFO_LOCATION" == "0" -a "$IMGINFO_START" == "0" ]; then
+        DD_PARAMS="bs=1M"
+    else
+        DD_PARAMS="skip=$IMGINFO_START seek=$IMGINFO_LOCATION bs=512"
     fi
-    log_debug BLOCK_SIZE=$BS
+    log_debug DD_PARAMS=$DD_PARAMS
 
     umount $IMGINFO_DEVICE &>-
 }
@@ -562,10 +570,9 @@ disk_copy_image()
 }
 
 main(){
-    log $APP_BANNER
     prepare
-    check_user
     check_params $@
+    check_user
     read_config
     disk_prepare
     disk_partition
