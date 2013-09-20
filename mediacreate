@@ -462,11 +462,28 @@ parse_image_config()
     if [ "$IMGINFO_MODE" == "raw" ]; then
         exit_error_if_not_num "Invalid disk location for raw mode!" $IMGINFO_LOCATION
     fi
+
+    IMGINFO_START=$(get_option_field_config $1 5)
+    if [ -z "$IMGINFO_START" ]; then
+        IMGINFO_START="0"
+    fi
+    log_debug IMGINFO_START=$IMGINFO_START
+    exit_error_if_not_num "Invalid image location for raw mode!" $IMGINFO_START
 }
 
 copy_image_raw()
 {
-    log "copying raw"
+    log "Copying [$IMGINFO_FILE] to [$IMGINFO_DEVICE] starting at block [$IMGINFO_LOCATION]"
+
+    # aqui! checar tamanhos!
+
+    local BS="bs=512"
+    if [ "$IMGINFO_LOCATION" == "0" ]; then
+        BS="bs=1M"
+    fi
+    log_debug BLOCK_SIZE=$BS
+
+    umount $IMGINFO_DEVICE &>-
 }
 
 copy_image_file()
