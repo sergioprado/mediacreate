@@ -36,7 +36,7 @@ APP_VERSION="1.0"
 APP_BANNER="Starting mediacreate V$APP_VERSION"
 
 # debug
-DEBUG_REDIR="&>-"
+DEBUG_REDIR="1>/dev/null 2>&1"
 
 # filesystems
 SUPPORTED_FS="btrfs ext2 ext3 ext4 ntfs vfat"
@@ -46,7 +46,7 @@ IMAGE_COPY_MODES="raw file tar"
 
 clean()    
 {
-    umount $TMP_DIR &>-
+    umount $TMP_DIR 1>/dev/null 2>&1
     rm -Rf $TMP_DIR
 }
 
@@ -325,7 +325,7 @@ disk_umount()
 {
     log "Umounting disk partitions"
     for f in $(ls ${DEVICE_FILE}*); do
-        sudo umount $f &>- 
+        sudo umount $f 1>/dev/null 2>&1
     done
 }
 
@@ -355,7 +355,7 @@ disk_partition()
         exit_error "Could not create disk partitions!"
     fi
 
-    sfdisk --re-read $DEVICE_FILE &>-
+    sfdisk --re-read $DEVICE_FILE 1>/dev/null 2>&1
 }
 
 parse_format_config()
@@ -450,6 +450,7 @@ parse_image_config()
     IMGINFO_FILE=$(get_option_field_config $1 2)
     log_debug IMGINFO_FILE=$IMGINFO_FILE
     exit_error_if_null "Please provide an image filename!" $IMGINFO_FILE
+    IMGINFO_FILE=$(eval echo $IMGINFO_FILE)
     if [ "${IMGINFO_FILE:0:1}" != "/" ]; then
         IMGINFO_FILE=${CFG_IMGDIR}/${IMGINFO_FILE}
         log_debug "IMGINFO_FILE=$IMGINFO_FILE (absolute path)"
@@ -479,26 +480,27 @@ parse_image_config()
 
 copy_image_raw()
 {
-    log "Copying [$IMGINFO_FILE] at block [$IMGINFO_START] to [$IMGINFO_DEVICE] at block [$IMGINFO_LOCATION]"
-
-    # confirm here
+    log "Copying [$IMGINFO_FILE] at position [$IMGINFO_START] to [$IMGINFO_DEVICE] at block [$IMGINFO_LOCATION]"
 
     local DD_PARAMS=""
     if [ "$IMGINFO_LOCATION" == "0" -a "$IMGINFO_START" == "0" ]; then
         DD_PARAMS="bs=1M"
     else
-        DD_PARAMS="skip=$IMGINFO_START seek=$IMGINFO_LOCATION bs=512"
+        DD_PARAMS="bs=512 skip=$IMGINFO_START seek=$IMGINFO_LOCATION"
     fi
     log_debug DD_PARAMS=$DD_PARAMS
 
-    umount $IMGINFO_DEVICE &>-
+    umount $IMGINFO_DEVICE 1>/dev/null 2>&1
+
+    assert eval dd if=$IMGINFO_FILE of=$IMGINFO_DEVICE $DD_PARAMS $DEBUG_REDIR
+    sync
 }
 
 copy_image_file()
 {
     log "Copying [$IMGINFO_FILE] to [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
 
-    umount $IMGINFO_DEVICE &>-
+    umount $IMGINFO_DEVICE 1>/dev/null 2>&1
     assert mount $IMGINFO_DEVICE $TMP_DIR
 
     local DEST=$TMP_DIR/$IMGINFO_LOCATION
@@ -518,7 +520,7 @@ copy_image_tar()
 {
     log "Untar [$IMGINFO_FILE] on [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
 
-    umount $IMGINFO_DEVICE &>-
+    umount $IMGINFO_DEVICE 1>/dev/null 2>&1
     assert mount $IMGINFO_DEVICE $TMP_DIR
 
     local DEST=$TMP_DIR/$IMGINFO_LOCATION
@@ -583,4 +585,3 @@ main(){
 }
 
 main $@
-
