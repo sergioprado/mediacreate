@@ -245,7 +245,7 @@ read_config_geometry()
     CFG_SECTORS=$(get_option_field_config $OPTION_CONFIG 2)
     exit_error_if_not_num "Invalid sectors configuration!" $CFG_SECTORS
 
-    DISK_SIZE=$(fdisk -l $DEVICE_FILE | grep Disk | grep bytes | awk '{print $5}')
+    DISK_SIZE=$(fdisk -l $DEVICE_FILE 2>&1 | grep Disk | grep bytes | awk '{print $5}')
     exit_error_if_not_num "Invalid disk size!" $DISK_SIZE
 
     CFG_CYLINDERS=$(echo $DISK_SIZE/$CFG_HEADS/$CFG_SECTORS/512 | bc)
@@ -508,10 +508,10 @@ copy_image_file()
         exit_error "Image destination directory does not exist [$IMGINFO_LOCATION]!"
     fi
 
-    log "Copying file [$IMGINFO_FILE] to disk"
+    log_debug "Copying file [$IMGINFO_FILE] to disk"
     assert eval cp -Rdv $IMGINFO_FILE $DEST $DEBUG_REDIR
 
-    log "Syncing disk partition [$IMGINFO_DEVICE]"
+    log_debug "Syncing disk partition [$IMGINFO_DEVICE]"
     sync
     assert umount $IMGINFO_DEVICE
 }
@@ -528,10 +528,10 @@ copy_image_tar()
         exit_error "Image destination directory does not exist [$IMGINFO_LOCATION]!"
     fi
 
-    log "Decompressing file [$IMGINFO_FILE] to disk"
+    log_debug "Decompressing file [$IMGINFO_FILE] to disk"
     assert eval tar xfv $IMGINFO_FILE -C $TMP_DIR/$IMGINFO_LOCATION $DEBUG_REDIR
 
-    log "Syncing disk partition [$IMGINFO_DEVICE]"
+    log_debug "Syncing disk partition [$IMGINFO_DEVICE]"
     sync
     assert umount $IMGINFO_DEVICE
 }
