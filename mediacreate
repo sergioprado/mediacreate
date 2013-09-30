@@ -19,6 +19,7 @@ DEVICE_FILE=""
 CONFIG_FILE=""
 DEBUG=0
 FORCE=0
+ZERO_DEVICE=0
 
 # config file variables
 CFG_DOS=""
@@ -131,6 +132,7 @@ usage()
     echo -e "\t-d, --device\tdevice node file"
     echo -e "\t-c, --config\tconfig filename"
     echo -e "\t-f, --force\tdo not ask before partitioning device"
+    echo -e "\t-z, --zero\tclear first blocks of disk before starting"
     echo -e "\t-g, --debug\tshow debug messages"
     echo -e "\t-h, --help\tthis help"
 }
@@ -155,6 +157,9 @@ read_params()
             -f | --force )          FORCE=1
                                     ;;
 
+            -z | --zero )           ZERO_DEVICE=1
+                                    ;;
+            
             -g | --debug )          DEBUG=1
                                     DEBUG_REDIR=""
                                     ;;
@@ -329,6 +334,13 @@ disk_umount()
     done
 }
 
+disk_zero()
+{
+    log "Clearing first blocks of disk"
+    assert eval dd if=/dev/zero of=$DEVICE_FILE bs=1M count=10 $DEBUG_REDIR
+    sync
+}
+
 disk_prepare()
 {
     if [ $FORCE == 0 ]; then
@@ -336,6 +348,10 @@ disk_prepare()
     fi
 
     disk_umount
+
+    if [ $ZERO_DEVICE == 1 ]; then
+        disk_zero
+    fi
 }
 
 disk_partition()
