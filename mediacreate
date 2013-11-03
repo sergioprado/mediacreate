@@ -43,7 +43,7 @@ DEBUG_REDIR="1>/dev/null 2>&1"
 SUPPORTED_FS="btrfs ext2 ext3 ext4 ntfs vfat"
 
 # copy image modes
-IMAGE_COPY_MODES="raw file tar"
+IMAGE_COPY_MODES="raw file tar dir"
 
 clean()    
 {
@@ -465,20 +465,26 @@ parse_image_config()
 
     IMGINFO_FILE=$(get_option_field_config $1 2)
     log_debug IMGINFO_FILE=$IMGINFO_FILE
-    exit_error_if_null "Please provide an image filename!" $IMGINFO_FILE
+    exit_error_if_null "Please provide an image filename or directory!" $IMGINFO_FILE
     IMGINFO_FILE=$(eval echo $IMGINFO_FILE)
     if [ "${IMGINFO_FILE:0:1}" != "/" ]; then
         IMGINFO_FILE=${CFG_IMGDIR}/${IMGINFO_FILE}
         log_debug "IMGINFO_FILE=$IMGINFO_FILE (absolute path)"
     fi
     if [ ! -e $IMGINFO_FILE ]; then
-        exit_error "Image file not found [$IMGINFO_FILE]!"
+        exit_error "Image file or directory not found [$IMGINFO_FILE]!"
     fi
 
     IMGINFO_MODE=$(get_option_field_config $1 3)
     log_debug IMGINFO_MODE=$IMGINFO_MODE
     exit_contains "$IMAGE_COPY_MODES" "$IMGINFO_MODE" "Invalid image copy mode!"
 
+    if [ "$IMGINFO_MODE" == "dir" ]; then
+        if [ ! -d $IMGINFO_FILE ]; then
+            exit_error "Image filename should be a directory [$IMGINFO_FILE]!"
+        fi
+    fi
+    
     IMGINFO_LOCATION=$(get_option_field_config $1 4)
     log_debug IMGINFO_LOCATION=$IMGINFO_LOCATION
     exit_error_if_null "Please provide a location for the image!" $IMGINFO_LOCATION
@@ -532,6 +538,26 @@ copy_image_file()
     assert umount $IMGINFO_DEVICE
 }
 
+copy_image_dir()
+{
+    log "Copying [$IMGINFO_FILE/*] to [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
+
+    umount $IMGINFO_DEVICE 1>/dev/null 2>&1
+    assert mount $IMGINFO_DEVICE $TMP_DIR
+
+    local DEST=$TMP_DIR/$IMGINFO_LOCATION
+    if [ ! -e $DEST ]; then
+        exit_error "Image destination directory does not exist [$IMGINFO_LOCATION]!"
+    fi
+
+    log_debug "Copying [$IMGINFO_FILE/*] to disk"
+    assert eval cp -Rdv $IMGINFO_FILE/* $DEST $DEBUG_REDIR
+
+    log_debug "Syncing disk partition [$IMGINFO_DEVICE]"
+    sync
+    assert umount $IMGINFO_DEVICE
+}
+
 copy_image_tar()
 {
     log "Untar [$IMGINFO_FILE] on [$IMGINFO_LOCATION] at partition [$IMGINFO_DEVICE]"
@@ -563,6 +589,9 @@ copy_image()
             ;;
         "tar")
             copy_image_tar
+            ;;
+        "dir")
+            copy_image_dir
             ;;
         *)
             exit_error "Invalid image copy mode [$IMGINFO_MODE]!"
