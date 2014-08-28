@@ -454,9 +454,9 @@ parse_image_config()
     exit_error_if_not_num "Invalid partition number!" $IMGINFO_PART
     
     if [ "$IMGINFO_PART" != "0" ]; then
-        IMGINFO_DEVICE=$DEVICE_FILE$IMGINFO_PART
+        IMGINFO_DEVICE=$DEVICE_PART_FILE$IMGINFO_PART
     else
-        IMGINFO_DEVICE=$DEVICE_FILE
+        IMGINFO_DEVICE=$DEVICE_PART_FILE
     fi
     log_debug IMGINFO_DEVICE=$IMGINFO_DEVICE
     if [ ! -e $IMGINFO_DEVICE ]; then
